@@ -194,6 +194,28 @@ def load_laps(rows: list[dict], t0: float) -> tuple[list[tuple[int, float, float
     return laps, unknown
 
 
+def missing_lap_rows(history: list[tuple]) -> int:
+    """Count laps the source skipped entirely, between a car's first and last recorded laps."""
+    if not history:
+        return 0
+    numbers = {lap for lap, _, _, _ in history}
+    return history[-1][0] - len(numbers)
+
+
+def finish_time(history: list[tuple], result: dict) -> float:
+    """When a classified car took the flag.
+
+    Normally the end of its last recorded lap. If the source has no end for the final
+    lap, the official race duration is used, so the car is not marked finished a lap early.
+    """
+    last_end = history[-1][2] if history else 0.0
+    official = result.get("duration")
+    laps_recorded = history[-1][0] if history else 0
+    if isinstance(official, (int, float)) and laps_recorded < (result.get("number_of_laps") or 0):
+        return max(last_end, float(official))
+    return last_end
+
+
 def choose_outline(src: Sources, race: RaceInfo, laps: list[dict],
                    tracks: dict[int, Track], t0: float) -> Outline:
     """Use this race's own quickest clean lap, falling back if its samples are unusable."""
@@ -236,12 +258,14 @@ def build(src: Sources, race: RaceInfo, log=print) -> rf.RacePackage:
 
     lap_history = {}
     unknown_ends = 0
+    skipped_laps = 0
     race_end = 0.0
     for number, rows in laps_by_driver.items():
         lap_history[number], unknown = load_laps(rows, t0)
         unknown_ends += unknown
+        skipped_laps += missing_lap_rows(lap_history[number])
         if lap_history[number]:
-            race_end = max(race_end, lap_history[number][-1][2])
+            race_end = max(race_end, finish_time(lap_history[number], results.get(number, {})))
     if race_end < LAP_TIME_MIN_S:
         raise NoTelemetry("OpenF1 lap data for this session is too sparse to time the race.")
 
@@ -387,7 +411,7 @@ def build(src: Sources, race: RaceInfo, log=print) -> rf.RacePackage:
                 stop = max(last_lap_end, last_moving_time(track))
             state[times >= stop, i] = rf.STATE_OUT
         elif history:
-            state[times >= last_lap_end, i] = rf.STATE_FINISHED
+            state[times >= finish_time(history, result), i] = rf.STATE_FINISHED
 
         if history:
             starts = np.array([s for _, s, _, _ in history])
@@ -440,7 +464,11 @@ def build(src: Sources, race: RaceInfo, log=print) -> rf.RacePackage:
         flags |= rf.FLAG_INCOMPLETE
         notes.append("OpenF1 has no position data: the running order is by grid position.")
     if unknown_ends:
-        notes.append(f"{unknown_ends} lap(s) have no recorded end time, usually a retirement lap.")
+        notes.append(f"{unknown_ends} lap(s) have no recorded end time, usually a retirement lap "
+                     "or the lap back to the pits.")
+    if skipped_laps:
+        notes.append(f"{skipped_laps} lap record(s) are missing from OpenF1. The dots are "
+                     "unaffected, but those lap times are not shown.")
     if not outline.telemetry_based:
         notes.append(f"Track outline: {outline.source}.")
     if outline.schematic:

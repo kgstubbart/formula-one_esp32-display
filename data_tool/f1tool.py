@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import filecmp
 import getpass
 import shutil
 import sys
@@ -117,16 +118,10 @@ def cmd_deploy(args) -> int:
     if builder.verify_all(OUT_DIR, log=lambda _text: None):
         print("A race file failed verification, so nothing was copied. Run: f1tool.py verify")
         return 1
-    files = [p for p in source.rglob("*") if p.is_file() and p.name != "wifi.txt"]
-    wifi = source / "wifi.txt"
-    if wifi.exists():
-        files.append(wifi)
     pending = []
-    for path in files:
+    for path in (p for p in source.rglob("*") if p.is_file()):
         destination = target / path.relative_to(source)
-        same = (destination.exists() and destination.stat().st_size == path.stat().st_size
-                and path.suffix == ".f1r")
-        if not same:
+        if not destination.exists() or not filecmp.cmp(path, destination, shallow=False):
             pending.append((path, destination))
     need = sum(p.stat().st_size for p, _ in pending)
     free = shutil.disk_usage(drive + "/").free
@@ -183,7 +178,10 @@ def menu() -> int:
         print("  5  Copy to the microSD card")
         print("  6  Serve races over Wi-Fi")
         print("  Q  Quit")
-        choice = input("\nChoose: ").strip().lower()
+        try:
+            choice = input("\nChoose: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return 0
         try:
             if choice == "1":
                 cmd_list(argparse.Namespace(season=int(input("Season: "))))
@@ -205,6 +203,8 @@ def menu() -> int:
             print("Please enter a number.")
         except (DataUnavailable, NetworkError) as problem:
             print(f"Problem: {problem}")
+        except (EOFError, KeyboardInterrupt):
+            return 0
         print()
 
 

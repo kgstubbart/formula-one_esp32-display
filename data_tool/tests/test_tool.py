@@ -294,6 +294,22 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(laps, [(1, 0.0, 100.0, True), (2, 100.0, 190.0, False)])
         self.assertEqual(unknown, 1)
 
+    def test_lap_rows_absent_from_the_source_are_counted(self):
+        history = [(1, 0.0, 90.0, False), (2, 90.0, 180.0, False), (4, 270.0, 360.0, False)]
+        self.assertEqual(telemetry.missing_lap_rows(history), 1)
+        self.assertEqual(telemetry.missing_lap_rows([]), 0)
+
+    def test_finish_uses_official_time_when_final_lap_has_no_end(self):
+        history = [(69, 0.0, 90.0, False), (70, 90.0, 180.0, False)]
+        self.assertEqual(telemetry.finish_time(history, {"number_of_laps": 71, "duration": 275.0}),
+                         275.0)
+
+    def test_finish_uses_lap_end_normally(self):
+        history = [(70, 90.0, 180.0, False)]
+        self.assertEqual(telemetry.finish_time(history, {"number_of_laps": 70, "duration": 179.5}),
+                         180.0)
+        self.assertEqual(telemetry.finish_time(history, {}), 180.0)
+
     def test_location_teleport_is_removed(self):
         t = np.arange(0, 10, 0.25)
         x = t * 800.0          # 80 m/s in decimetres.

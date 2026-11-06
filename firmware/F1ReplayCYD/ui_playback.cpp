@@ -146,8 +146,10 @@ void drawCar(LGFX_Sprite& map, int index) {
   }
   if (selected) map.drawCircle(x, y, DOT_R + 2, colours::TEXT);
 
-  const bool label = selected || R->labelMode == LABELS_ALL ||
-                     (R->labelMode == LABELS_TOP5 && car.position <= 5);
+  // Finished cars park together, where their labels would only pile up.
+  const bool wanted = R->labelMode == LABELS_ALL ||
+                      (R->labelMode == LABELS_TOP5 && car.position <= 5);
+  const bool label = selected || (wanted && car.state != CAR_FINISHED);
   if (label) drawLabel(map, driver.code, x, y, colours::TEXT);
 }
 
