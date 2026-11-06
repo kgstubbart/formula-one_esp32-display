@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Data tool output. Downloaded data and generated race packages stay local:
+# the sources are CC BY-NC-SA and wifi.txt holds your Wi-Fi password.
+data_tool/cache/
+data_tool/out/
+
+# Native test build output
+tests/native/build/
+
+# Editors / OS
+.vscode/
+Thumbs.db
+desktop.ini
