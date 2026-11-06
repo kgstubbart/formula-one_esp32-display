@@ -504,8 +504,7 @@ PlaybackResult uiPlayback(RaceFile& race) {
       return PlaybackResult::OutOfMemory;
     }
   }
-  Serial.printf("Replay: free heap %u, largest block %u, map depth %d
-",
+  Serial.printf("Replay: free heap %u, largest block %u, map depth %d\n",
                 unsigned(ESP.getFreeHeap()), unsigned(ESP.getMaxAllocHeap()),
                 int(sprite.getColorDepth()));
 
