@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .circuits import CIRCUITS
 from .durations import parse_duration
 from .http_client import CachedClient, DataUnavailable, RateLimiter, make_clients
 from .jolpica_dump import JolpicaDump, download as download_dump
@@ -206,6 +207,9 @@ def classify_race(row: dict, sessions: list[dict], now: float) -> RaceInfo:
         availability, note = AVAIL_FUTURE, "Race has not finished yet."
     elif session is not None:
         availability, note = AVAIL_TELEMETRY, "OpenF1 location data (approximate positions)."
+    elif season >= FIRST_LAP_TIMING_SEASON and row["Circuit"]["circuitId"] not in CIRCUITS:
+        availability = AVAIL_UNAVAILABLE
+        note = "No track outline is available for this circuit, so it is not replayed."
     elif season >= FIRST_LAP_TIMING_SEASON:
         availability = AVAIL_ESTIMATED
         note = "No location data; positions estimated from lap times."

@@ -41,6 +41,10 @@ For **ESTIMATED** races:
   red flag or weather.
 - Pit stops before 2011 appear only as slower laps, because no pit data exists.
 - A retired car disappears at its last recorded lap. Where it really stopped is unknown.
+- When the source is missing a lap time, the tool first tries to recover it exactly from
+  the car's official race time. If it can't, and the car must stay on track, it uses the
+  field's median for that lap and says so in the notes. A retired car's untimed final laps
+  are never invented, and lap records listed after a car retired are ignored as source errors.
 
 Tap the label during a replay to read the notes for that race. Any missing or filled-in
 data is listed there and in `data_tool/out/f1replay/reports/`.
@@ -195,7 +199,8 @@ Reading the screen:
 - The track turns yellow under a safety car or VSC, and red under a red flag.
 - `PIT`, `OUT` and `FIN` replace the gap in the running order. `+1L` means one lap down.
 - `LAYOUT DIFFERS` means the race used an older layout than the outline shown.
-  `SCHEMATIC TRACK` means no real outline exists for that circuit, so it is a plain oval.
+- When you follow a driver, a lap time starting with `~` was missing from the source and is
+  estimated.
 
 ## Optional: Get races over Wi-Fi
 
@@ -304,8 +309,9 @@ The code in this repository is under the [MIT License](LICENSE).
 - Only the main Grand Prix is supported, not sprint races.
 - Outlines for estimated races are mostly modern layouts. Known changes show
   `LAYOUT DIFFERS`, but the list of changes is not complete.
-- Valencia, Korea, India and Jerez have no outline source, so they appear as a schematic
-  oval. To add one, add its GeoJSON to the lookup in `data_tool/f1data/circuits.py`.
+- Races at Valencia, Korea, India, Fuji and Jerez are not replayed, because no outline
+  source covers those circuits. The catalog shows them as unavailable. To add one, add its
+  GeoJSON outline to the lookup in `data_tool/f1data/circuits.py`.
 - For circuits using the GeoJSON outlines, the start line position is approximate.
 - Accents are removed from names on the device, because of its font. The full names are in
   the `reports` folder.

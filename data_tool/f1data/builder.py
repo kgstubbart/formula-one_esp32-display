@@ -44,8 +44,11 @@ def build_race(src: Sources, season: int, round_number: int, out_dir: Path, log=
             fallback_notes.append(f"Telemetry unusable: {problem}")
     if package is None:
         log("  Estimating positions from lap times")
-        package = estimate.build(src, race, best_outline(src, race.circuit_id), log,
-                                 fallback_notes)
+        outline = best_outline(src, race.circuit_id)
+        if outline.schematic:
+            raise DataUnavailable(f"{race.name}: no track outline could be loaded for "
+                                  f"{race.circuit_name}, so it was not built.")
+        package = estimate.build(src, race, outline, log, fallback_notes)
 
     path = root_dir(out_dir) / "races" / f"{race.stem}.f1r"
     size, crc = rf.write_package(package, path)

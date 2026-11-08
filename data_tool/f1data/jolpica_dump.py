@@ -129,8 +129,8 @@ class JolpicaDump:
                            "givenName": driver["forename"], "familyName": driver["surname"]},
                 "Constructor": {"constructorId": team["reference"], "name": team["name"]},
             }
-            # The dump stores every car's total time; the API gives only the winner's.
-            if entry["position"] == "1" and entry["time"]:
+            # Like the API, a total time only for cars that finished on the lead lap.
+            if classified and entry["time"] and not status.startswith(("+", "Lapped")):
                 result["Time"] = {"millis": str(int(parse_duration(entry["time"]) * 1000))}
             results.append(result)
             for lap, seconds, position, _ in self.laps.get(entry["id"], []):

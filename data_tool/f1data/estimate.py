@@ -40,6 +40,7 @@ class DriverTiming:
     pit_laps: dict[int, float] = field(default_factory=dict)
     grid: int = 0
     classified: bool = True
+    filled_laps: set[int] = field(default_factory=set)
 
     @property
     def lap_ends(self) -> np.ndarray:
@@ -126,17 +127,52 @@ def slow_windows(timings: list[DriverTiming], median_lap: float) -> list[tuple[f
     return windows
 
 
-def fill_missing_laps(recorded: dict[int, float], expected: int,
-                      field_median: dict[int, float], overall: float) -> tuple[list[float], int]:
-    """Return lap durations 1..expected, plus how many had to be filled in."""
-    durations, filled = [], 0
-    for lap in range(1, expected + 1):
-        if lap in recorded:
-            durations.append(recorded[lap])
-        else:
-            durations.append(field_median.get(lap, overall))
-            filled += 1
-    return durations, filled
+@dataclass
+class LapRepair:
+    """What had to be done to one car's lap list. Counts go into the race notes."""
+
+    recovered: int = 0       # Worked out exactly from the official race time.
+    filled: int = 0          # Estimated from the field's median for that lap.
+    untimed_final: int = 0   # A retired car's last laps with no time: left out.
+    stray: int = 0           # Records after the official lap count: ignored.
+    filled_laps: set[int] = field(default_factory=set)
+
+
+def driver_laps(recorded: dict[int, float], official_laps: int, classified: bool,
+                total_s: float | None, field_median: dict[int, float],
+                overall: float) -> tuple[list[float], LapRepair]:
+    """Build one car's lap durations from the source, inventing as little as possible.
+
+    - The official lap count is the truth: later records are source errors (Jolpica has a
+      few laps listed after a car retired) and are ignored.
+    - A retired car with untimed final laps leaves at its last timed lap.
+    - A single missing lap of a car with an official total time is that total minus the
+      other laps, so it is recovered exactly.
+    - Any other gap must be bridged to keep the car on track, so it is estimated from the
+      field's median for that lap, and marked as filled.
+    """
+    repair = LapRepair()
+    repair.stray = sum(1 for lap in recorded if lap > official_laps)
+    laps = {lap: seconds for lap, seconds in recorded.items() if lap <= official_laps}
+    expected = official_laps
+    if not classified:
+        last_timed = max(laps, default=0)
+        repair.untimed_final = expected - last_timed
+        expected = last_timed
+
+    missing = [lap for lap in range(1, expected + 1) if lap not in laps]
+    if len(missing) == 1 and total_s is not None:
+        value = total_s - sum(laps.values())
+        typical = field_median.get(missing[0], overall)
+        if 0.7 * typical <= value <= 4.0 * typical:
+            laps[missing[0]] = value
+            repair.recovered = 1
+            missing = []
+    for lap in missing:
+        laps[lap] = field_median.get(lap, overall)
+        repair.filled += 1
+        repair.filled_laps.add(lap)
+    return [laps[lap] for lap in range(1, expected + 1)], repair
 
 
 def compute_order(progress: np.ndarray, finish_time: np.ndarray, out: np.ndarray) -> np.ndarray:
@@ -226,21 +262,25 @@ def build(src: Sources, race: RaceInfo, outline: Outline, log=print,
     drivers: list[rf.Driver] = []
     timings: list[DriverTiming] = []
     team_seen: set[str] = set()
-    filled_total = expected_total = 0
+    totals = LapRepair()
+    lap_total = 0
     no_start: list[str] = []
     for result in sorted(results, key=lambda r: int(r.get("position") or 99)):
         info = result["Driver"]
         team_id = result["Constructor"]["constructorId"]
         recorded = {lap: v[0] for lap, v in lap_data.get(info["driverId"], {}).items()}
-        expected = max(int(result.get("laps") or 0), max(recorded, default=0))
         name = f"{info.get('givenName', '')} {info.get('familyName', '')}".strip()
         if did_not_start(result) and not recorded:
             no_start.append(name)
             continue
-        durations, filled = fill_missing_laps(recorded, expected, field_median, overall)
-        filled_total += filled
-        expected_total += expected
         classified = is_classified(result)
+        millis = result.get("Time", {}).get("millis")
+        durations, repair = driver_laps(recorded, int(result.get("laps") or 0), classified,
+                                        int(millis) / 1000.0 if millis else None,
+                                        field_median, overall)
+        for name_ in ("recovered", "filled", "untimed_final", "stray"):
+            setattr(totals, name_, getattr(totals, name_) + getattr(repair, name_))
+        lap_total += len(durations)
         grid = int(result.get("grid") or 0)
         drivers.append(rf.Driver(
             _car_number(result), _driver_code(info), name, result["Constructor"]["name"],
@@ -249,16 +289,24 @@ def build(src: Sources, race: RaceInfo, outline: Outline, log=print,
         team_seen.add(team_id)
         pits = {lap: (sec if 0 < sec <= MAX_PIT_HOLD_S else DEFAULT_PIT_HOLD_S)
                 for lap, sec in pit_data.get(info["driverId"], {}).items()}
-        timings.append(DriverTiming(durations, pits, grid, classified))
+        timings.append(DriverTiming(durations, pits, grid, classified, repair.filled_laps))
 
     if no_start:
         notes.append("Did not start: " + ", ".join(no_start) + ".")
-    if expected_total and filled_total:
-        share = filled_total / expected_total
-        notes.append(f"{filled_total} of {expected_total} lap times were missing from the source "
-                     "and were filled with that lap's field median.")
-        if share > FILL_WARNING_SHARE:
+    if totals.recovered:
+        notes.append(f"{totals.recovered} lap time(s) missing from the source were recovered "
+                     "exactly from the official race time.")
+    if totals.filled:
+        notes.append(f"{totals.filled} of {lap_total} lap times are missing from the source and "
+                     "were ESTIMATED from the field's median for that lap.")
+        if totals.filled / max(lap_total, 1) > FILL_WARNING_SHARE:
             flags |= rf.FLAG_INCOMPLETE
+    if totals.untimed_final:
+        notes.append(f"{totals.untimed_final} retirement lap(s) have no time in the source: those "
+                     "cars leave the track after their last timed lap.")
+    if totals.stray:
+        notes.append(f"{totals.stray} stray lap record(s) after a car's retirement were ignored as "
+                     "source errors.")
     winner = next((r for r in results if r.get("position") == "1"), None)
     if winner and winner.get("Time", {}).get("millis") and timings:
         recorded_total = sum(timings[0].durations)
@@ -294,6 +342,7 @@ def build(src: Sources, race: RaceInfo, outline: Outline, log=print,
         for lap, (duration, end) in enumerate(zip(timing.durations, ends), start=1):
             flag = rf.LAP_PIT_IN if lap in timing.pit_laps else 0
             flag |= rf.LAP_PIT_OUT if lap - 1 in timing.pit_laps else 0
+            flag |= rf.LAP_FILLED if lap in timing.filled_laps else 0
             laps_table.append(rf.LapRecord(i, lap, flag, int(end * 1000), int(duration * 1000)))
 
     xy = outline.fraction_to_xy(progress.ravel())

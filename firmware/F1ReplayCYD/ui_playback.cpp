@@ -177,10 +177,14 @@ void drawSelectedLine(LGFX_Sprite& map, uint32_t raceMs) {
   if (index < 0) return;
   const DriverInfo& driver = R->race->driver(index);
   const CarSample& car = R->cars[index];
-  char lastLap[14] = "--";
+  char lastLap[15] = "--";
   for (int i = R->selectedLapCount - 1; i >= 0; i--) {
     if (R->selectedLaps[i].endMs <= raceMs) {
-      formatLapTime(R->selectedLaps[i].durationMs, lastLap, sizeof(lastLap));
+      // "~" marks a lap time the source did not have, so it was estimated.
+      const bool estimated = R->selectedLaps[i].flags & LAP_FLAG_FILLED;
+      lastLap[0] = '~';
+      formatLapTime(R->selectedLaps[i].durationMs, lastLap + (estimated ? 1 : 0),
+                    sizeof(lastLap) - 1);
       break;
     }
   }

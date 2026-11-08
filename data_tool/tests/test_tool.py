@@ -164,6 +164,13 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(info.availability, sources.AVAIL_UNAVAILABLE)
         self.assertIn("1996", info.note)
 
+    def test_circuit_without_outline_is_unavailable(self):
+        row = race_row("2012", "2012-06-24")
+        row["Circuit"]["circuitId"] = "valencia"
+        info = sources.classify_race(row, [], self.NOW)
+        self.assertEqual(info.availability, sources.AVAIL_UNAVAILABLE)
+        self.assertIn("outline", info.note)
+
     def test_lap_timing_era_is_estimated(self):
         info = sources.classify_race(race_row(), [], self.NOW)
         self.assertEqual(info.availability, sources.AVAIL_ESTIMATED)
@@ -216,10 +223,38 @@ class EstimateTests(unittest.TestCase):
         progress = estimate.progress_at(motion, np.array([100.0 + 125.0, 2000.0]))
         np.testing.assert_allclose(progress, [2.0, 2.0])
 
-    def test_missing_laps_are_filled_and_counted(self):
-        durations, filled = estimate.fill_missing_laps({1: 100.0, 3: 90.0}, 4, {2: 95.0}, 91.0)
-        self.assertEqual(durations, [100.0, 95.0, 90.0, 91.0])
-        self.assertEqual(filled, 2)
+    def test_mid_race_gaps_are_estimated_and_marked(self):
+        durations, repair = estimate.driver_laps({1: 100.0, 3: 90.0, 4: 92.0}, 4, True, None,
+                                                 {2: 95.0}, 91.0)
+        self.assertEqual(durations, [100.0, 95.0, 90.0, 92.0])
+        self.assertEqual((repair.filled, repair.filled_laps), (1, {2}))
+
+    def test_single_gap_is_recovered_from_official_time(self):
+        durations, repair = estimate.driver_laps({1: 100.0, 3: 90.0}, 3, True, 287.5,
+                                                 {2: 95.0}, 91.0)
+        self.assertEqual(durations, [100.0, 97.5, 90.0])
+        self.assertEqual((repair.recovered, repair.filled), (1, 0))
+
+    def test_implausible_recovery_falls_back_to_estimate(self):
+        _, repair = estimate.driver_laps({1: 100.0, 3: 90.0}, 3, True, 600.0, {2: 95.0}, 91.0)
+        self.assertEqual((repair.recovered, repair.filled), (0, 1))
+
+    def test_stray_laps_after_retirement_are_ignored(self):
+        # Monza 2018: Alonso retired after lap 9, but the source also lists a lap 18.
+        recorded = {lap: 85.0 for lap in range(1, 10)} | {18: 84.0}
+        durations, repair = estimate.driver_laps(recorded, 9, False, None, {}, 85.0)
+        self.assertEqual(len(durations), 9)
+        self.assertEqual((repair.stray, repair.filled), (1, 0))
+
+    def test_untimed_retirement_lap_is_not_invented(self):
+        durations, repair = estimate.driver_laps({1: 90.0, 2: 91.0}, 3, False, None, {3: 92.0},
+                                                 91.0)
+        self.assertEqual(durations, [90.0, 91.0])
+        self.assertEqual((repair.untimed_final, repair.filled), (1, 0))
+
+    def test_car_with_no_valid_laps_has_none(self):
+        durations, repair = estimate.driver_laps({6: 99.0}, 0, False, None, {}, 90.0)
+        self.assertEqual((durations, repair.stray), ([], 1))
 
     def test_slow_window_needs_most_of_the_field(self):
         normal = [estimate.DriverTiming([90.0] * 6) for _ in range(5)]
