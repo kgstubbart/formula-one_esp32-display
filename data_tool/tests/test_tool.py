@@ -294,6 +294,22 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(laps, [(1, 0.0, 100.0, True), (2, 100.0, 190.0, False)])
         self.assertEqual(unknown, 1)
 
+    def test_laps_timed_before_lights_out_are_dropped(self):
+        # Japan 2024: a stray lap from the aborted start, 25 minutes before the restart.
+        rows = [{"lap_number": 1, "date_start": "2024-01-01T01:00:00+00:00", "lap_duration": 90.0},
+                {"lap_number": 2, "date_start": "2024-01-01T00:34:30+00:00", "lap_duration": 203.0}]
+        t0 = sources.parse_time("2024-01-01T01:00:00+00:00")
+        laps, unusable = telemetry.load_laps(rows, t0)
+        self.assertEqual(laps, [(1, 0.0, 90.0, False)])
+        self.assertEqual(unusable, 1)
+
+    def test_aborted_start_is_detected(self):
+        t0 = sources.parse_time("2024-04-07T05:32:00.407+00:00")
+        rc = [{"date": "2024-04-07T05:04:24.473+00:00", "message": "SESSION ABORTED"}]
+        self.assertTrue(telemetry.aborted_start(rc, t0))
+        later = [{"date": "2024-04-07T06:10:00+00:00", "message": "SESSION ABORTED"}]
+        self.assertFalse(telemetry.aborted_start(later, t0))
+
     def test_lap_rows_absent_from_the_source_are_counted(self):
         history = [(1, 0.0, 90.0, False), (2, 90.0, 180.0, False), (4, 270.0, 360.0, False)]
         self.assertEqual(telemetry.missing_lap_rows(history), 1)

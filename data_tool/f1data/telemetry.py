@@ -84,6 +84,18 @@ def pit_windows(pit_rows: list[dict], history: list[tuple], t0: float,
     return windows, {lap - 1 for lap in out_lap_numbers}
 
 
+def aborted_start(race_control: list[dict], t0: float) -> bool:
+    """True if the race was started, red-flagged and restarted before lap 1 was counted.
+
+    OpenF1 then times lap 1 from the restart, so the replay can only begin there.
+    """
+    for message in race_control:
+        moment = parse_time(message["date"]) - t0
+        if -3 * 3600 < moment < -60 and message.get("message") == "SESSION ABORTED":
+            return True
+    return False
+
+
 def lights_out_time(laps: list[dict], race_control: list[dict], session: dict) -> float:
     """Lap 1 starts at lights-out, so the most common lap 1 start time is the race start."""
     starts = [lap["date_start"] for lap in laps if lap.get("lap_number") == 1
@@ -169,9 +181,11 @@ def last_moving_time(track: Track) -> float:
 
 
 def load_laps(rows: list[dict], t0: float) -> tuple[list[tuple[int, float, float, bool]], int]:
-    """Return ([(lap, start_s, end_s, derived)], laps_with_unknown_end) for one driver.
+    """Return ([(lap, start_s, end_s, derived)], laps_without_usable_time) for one driver.
 
     Lap duration can be null. When it is, the end comes from the next lap's start.
+    Records timed before lights-out are left out: after a lap-1 red flag, OpenF1 can keep
+    stray laps from the aborted start, which would otherwise appear before the race.
     """
     ordered = sorted((r for r in rows if r.get("lap_number")), key=lambda r: r["lap_number"])
     laps = []
@@ -187,6 +201,9 @@ def load_laps(rows: list[dict], t0: float) -> tuple[list[tuple[int, float, float
             end = parse_time(ordered[index + 1]["date_start"]) - t0
             derived = True
         else:
+            unknown += 1
+            continue
+        if start < -1.0 or end <= start:
             unknown += 1
             continue
         laps.append((row["lap_number"], start, end, derived))
@@ -305,6 +322,9 @@ def build(src: Sources, race: RaceInfo, log=print) -> rf.RacePackage:
 
     notes = ["APPROXIMATE positions from OpenF1 location data (about 3.7 samples per second). "
              "Lateral track position is not reliable."]
+    if aborted_start(race_control, t0):
+        notes.append("The race was red-flagged on lap 1 and restarted. OpenF1 times the race "
+                     "from the restart, so the replay starts there.")
     flags = 0
     drivers: list[rf.Driver] = []
     numbers: list[int] = []
@@ -464,7 +484,7 @@ def build(src: Sources, race: RaceInfo, log=print) -> rf.RacePackage:
         flags |= rf.FLAG_INCOMPLETE
         notes.append("OpenF1 has no position data: the running order is by grid position.")
     if unknown_ends:
-        notes.append(f"{unknown_ends} lap(s) have no recorded end time, usually a retirement lap "
+        notes.append(f"{unknown_ends} lap record(s) have no usable time, usually a retirement lap "
                      "or the lap back to the pits.")
     if skipped_laps:
         notes.append(f"{skipped_laps} lap record(s) are missing from OpenF1. The dots are "
