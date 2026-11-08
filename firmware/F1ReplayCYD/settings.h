@@ -17,11 +17,13 @@ struct DisplaySettings {
 };
 
 extern DisplaySettings gDisplaySettings;
+extern bool gAutoNext;  // Go on to the next race when one finishes.
 extern TouchCalibration gTouchCalibration;
 
 void settingsLoad();
 void settingsSaveDisplay();
 void settingsSaveTouch();
+void settingsSaveAutoNext();
 
 // Moves to the next (panel, inversion) combination.
 void settingsNextPanelPreset();

@@ -25,9 +25,11 @@ SPIClass SPI;
 CydDisplay lcd;
 DisplaySettings gDisplaySettings = {PANEL_ILI9341, false, false, 1, 200, false};
 TouchCalibration gTouchCalibration = {true, {1, 0, 0, 0, 1, 0}};
+bool gAutoNext = true;
 
 void settingsSaveDisplay() {}
 void settingsSaveTouch() {}
+void settingsSaveAutoNext() {}
 void settingsNextPanelPreset() {}
 const char* settingsPanelName() { return "ILI9341 normal"; }
 void touchBegin() {}
@@ -122,11 +124,14 @@ class FileSource : public ByteSource {
 
 RaceFile race;
 
-void replayScript(const std::string& name) {
+void replayScript(const std::string& name, bool waitForNextRace) {
   shot(name + "_info");
   tap(265, 217);               // Replay.
   wait(1500);
   shot(name + "_start");
+  wait(5000);                  // The control bar hides itself while playing.
+  shot(name + "_fullscreen");
+  tap(100, 100);               // A tap on the map brings the controls back.
   tap(102 - 34 + 17, 222);     // Pause... the play button is slot 2.
   tap(4 * 34 + 17, 222);       // Speed 2x -> 5x.
   tap(4 * 34 + 17, 222);       // 5x -> 10x.
@@ -141,23 +146,38 @@ void replayScript(const std::string& name) {
   tap(1 * 34 + 17, 222);       // Previous lap.
   tap(2 * 34 + 17, 222);       // Play.
   wait(500);
-  drag(315, 222);              // Scrub to the end.
-  wait(300);
+  drag(315, 222);              // Scrub to the end: the next-race countdown starts.
+  wait(3000);
   shot(name + "_end");
-  tap(17, 222);                // Menu: leave the replay.
+  if (waitForNextRace) {
+    wait(9000);                // Let the countdown finish.
+  } else {
+    tap(100, 100);             // Any tap cancels the countdown...
+    wait(300);
+    shot(name + "_stayed");
+    tap(17, 222);              // ...then Menu leaves the replay.
+  }
 }
 
-void runRace(const std::string& root, const std::string& fileName, const std::string& name) {
+void runRace(const std::string& root, const std::string& fileName, const std::string& name,
+             bool waitForNextRace) {
   FileSource source(root + "/races/" + fileName);
   const RaceError error = race.open(&source);
   if (error != RaceError::None) {
     printf("%s: %s\n", fileName.c_str(), raceErrorText(error));
     exit(2);
   }
-  replayScript(name);
+  replayScript(name, waitForNextRace);
   if (uiRaceInfo(race)) {
-    const PlaybackResult result = uiPlayback(race);
-    printf("%s: replay ended with result %d\n", name.c_str(), int(result));
+    uint8_t speed = 1;
+    const PlaybackResult result = uiPlayback(race, "2024 Saudi Arabian Grand Prix", &speed);
+    const PlaybackResult expected = waitForNextRace ? PlaybackResult::Next : PlaybackResult::Back;
+    printf("%s: replay ended with result %d, speed index %u\n", name.c_str(), int(result),
+           unsigned(speed));
+    if (result != expected || speed != 3) {
+      puts("Unexpected replay result or speed.");
+      exit(3);
+    }
   } else {
     puts("Replay button missed.");
     exit(3);
@@ -227,7 +247,7 @@ int main(int argc, char** argv) {
   for (int i = 3; i < argc; i++) {
     std::string name = argv[i];
     name = "race_" + name.substr(0, name.find('.'));
-    runRace(root, argv[i], name);
+    runRace(root, argv[i], name, i == 3);  // The first race lets the countdown run out.
   }
   puts("UI script finished.");
   return 0;

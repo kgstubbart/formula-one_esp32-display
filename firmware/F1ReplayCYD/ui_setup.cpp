@@ -162,11 +162,14 @@ void uiSettings() {
              unsigned(gDisplaySettings.brightness) * 100 / 255);
     const Button light = {10, 34, 300, 38, brightness, colours::PANEL_LIGHT};
     const Button calibrate = {10, 78, 300, 38, "Calibrate touch", colours::PANEL_LIGHT};
-    const Button display = {10, 122, 300, 38, "Display setup", colours::PANEL_LIGHT};
+    const Button display = {10, 122, 146, 38, "Display setup", colours::PANEL_LIGHT};
+    const Button autoNext = {164, 122, 146, 38, gAutoNext ? "Auto-next: on" : "Auto-next: off",
+                             colours::PANEL_LIGHT};
     const Button back = {10, 196, 300, 36, "Back", colours::ACCENT};
     uiButton(light);
     uiButton(calibrate);
     uiButton(display);
+    uiButton(autoNext);
     uiButton(back);
     lcd.setFont(&fonts::Font0);
     lcd.setTextColor(colours::DIM, colours::BACKGROUND);
@@ -185,6 +188,9 @@ void uiSettings() {
       uiCalibrateTouch();
     } else if (uiHit(display, x, y)) {
       uiDisplaySetup();
+    } else if (uiHit(autoNext, x, y)) {
+      gAutoNext = !gAutoNext;
+      settingsSaveAutoNext();
     }
   }
 }

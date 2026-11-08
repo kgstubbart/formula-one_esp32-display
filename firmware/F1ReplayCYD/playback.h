@@ -19,6 +19,8 @@ class Playback {
   void togglePlaying();
   void setPlaying(bool playing);
   void cycleSpeed();
+  void setSpeedIndex(uint8_t index) { speedIndex_ = index < SPEED_COUNT ? index : speedIndex_; }
+  uint8_t speedIndex() const { return speedIndex_; }
   void seek(uint32_t positionMs);
 
   bool playing() const { return playing_; }

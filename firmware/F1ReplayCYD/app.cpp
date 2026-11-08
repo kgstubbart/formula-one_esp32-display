@@ -20,6 +20,8 @@ SdSource raceSource;
 Manifest manifest;
 RaceFile race;
 ManifestRow selectedRow;
+ManifestRow nextRow;
+uint8_t speedIndex = 1;  // Kept between races, so auto-play continues at the same speed.
 uint16_t seasons[MAX_SEASONS];
 RaceListItem races[MAX_RACES_PER_SEASON];
 int seasonCount = 0;
@@ -64,12 +66,13 @@ void openManifest() {
   }
 }
 
-void playRace(const ManifestRow& row) {
+// Opens and checks one race. Shows the error and returns false if it cannot be played.
+bool openRace(const ManifestRow& row) {
   char path[64];
   if (!sdRaceFileNameOk(row.file)) {
     uiError("Bad race entry", "The catalog has an invalid file name for this race.",
             "Rebuild the manifest with the data tool.", "Back");
-    return;
+    return false;
   }
   sdRacePath(row.file, path, sizeof(path));
   if (!raceSource.open(path)) {
@@ -77,18 +80,41 @@ void playRace(const ManifestRow& row) {
     snprintf(message, sizeof(message), "%s is in the catalog but its file is not on the card.",
              row.file);
     uiError("Race file missing", message, "Copy the f1replay folder to the card again.", "Back");
-    return;
+    return false;
   }
   const RaceError error = race.open(&raceSource);
   if (error != RaceError::None) {
     raceSource.close();
     uiError("Bad race file", raceErrorText(error),
             "Rebuild the race with the data tool, or copy it to the card again.", "Back");
-    return;
+    return false;
   }
+  return true;
+}
 
-  if (uiRaceInfo(race)) {
-    const PlaybackResult result = uiPlayback(race);
+// Plays a race, and then the following ones while auto-play is on.
+void playRace(const ManifestRow& first) {
+  static ManifestRow current;
+  current = first;
+  bool showInfo = true;  // Only before a race the user picked, not between auto-played ones.
+  for (;;) {
+    if (!openRace(current)) return;
+    static char nextName[56];
+    const char* next = nullptr;
+    if (gAutoNext && manifest.findNextReady(current.season, current.round, &nextRow)) {
+      snprintf(nextName, sizeof(nextName), "%u %s", unsigned(nextRow.season), nextRow.name);
+      next = nextName;
+    }
+    PlaybackResult result = PlaybackResult::Back;
+    if (!showInfo || uiRaceInfo(race)) result = uiPlayback(race, next, &speedIndex);
+    race.close();
+    raceSource.close();
+
+    if (result == PlaybackResult::Next) {
+      current = nextRow;
+      showInfo = false;
+      continue;
+    }
     if (result == PlaybackResult::OutOfMemory) {
       uiError("Out of memory", "There is not enough free memory for the track map.",
               "Restart the board and try again.", "Back");
@@ -96,9 +122,8 @@ void playRace(const ManifestRow& row) {
       uiError("Card read error", "Reading the race from the card failed during the replay.",
               "Check that the card is seated properly.", "Back");
     }
+    return;
   }
-  race.close();
-  raceSource.close();
 }
 
 void browseSeason(uint16_t season) {

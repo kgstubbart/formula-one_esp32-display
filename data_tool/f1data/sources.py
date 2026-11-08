@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .durations import parse_duration
 from .http_client import CachedClient, DataUnavailable, RateLimiter, make_clients
+from .jolpica_dump import JolpicaDump, download as download_dump
 
 FIRST_LAP_TIMING_SEASON = 1996   # Jolpica: "Data starts from the 1996 season."
 FIRST_PIT_STOP_SEASON = 2011     # Jolpica: "Data starts from the 2011 season."
@@ -59,6 +61,8 @@ class Sources:
         self.openf1, self.jolpica = make_clients(self.cache_dir, log)
         self.raw = CachedClient("outlines", "https://raw.githubusercontent.com", self.cache_dir,
                                 RateLimiter([(2, 1.0)]), log=log)
+        self.use_dump = True
+        self._dump: JolpicaDump | None = None
 
     def network_calls(self) -> int:
         return self.openf1.network_calls + self.jolpica.network_calls + self.raw.network_calls
@@ -111,7 +115,23 @@ class Sources:
                 return info
         raise DataUnavailable(f"Jolpica lists no round {round_number} in the {season} season.")
 
+    def _from_dump(self, race: RaceInfo):
+        """Historic races come from the database dump, so they cost no API requests."""
+        if not self.use_dump or race.season >= FIRST_TELEMETRY_SEASON:
+            return None
+        if self._dump is None:
+            self._dump = JolpicaDump(download_dump(self.cache_dir, self.log))
+        found = self._dump.race(race.season, race.round)
+        return found if found is not None and found.laps else None
+
+    def data_origin(self, race: RaceInfo) -> str:
+        dumped = self._from_dump(race)
+        return f"database dump of {self._dump.date}" if dumped is not None else "API"
+
     def results(self, race: RaceInfo) -> list[dict]:
+        dumped = self._from_dump(race)
+        if dumped is not None:
+            return dumped.results
         rows: list[dict] = []
         for mr in self._pages(f"{race.season}/{race.round}/results/", self._ttl(race.season)):
             for entry in mr["RaceTable"]["Races"]:
@@ -120,6 +140,9 @@ class Sources:
 
     def lap_times(self, race: RaceInfo) -> dict[str, dict[int, tuple[float, int]]]:
         """driverId -> {lap: (seconds, position)}."""
+        dumped = self._from_dump(race)
+        if dumped is not None:
+            return dumped.laps
         laps: dict[str, dict[int, tuple[float, int]]] = {}
         for mr in self._pages(f"{race.season}/{race.round}/laps/", self._ttl(race.season)):
             for entry in mr["RaceTable"]["Races"]:
@@ -135,6 +158,9 @@ class Sources:
         """driverId -> {lap: pit lane seconds}."""
         if race.season < FIRST_PIT_STOP_SEASON:
             return {}
+        dumped = self._from_dump(race)
+        if dumped is not None:
+            return dumped.pit_stops
         stops: dict[str, dict[int, float]] = {}
         for mr in self._pages(f"{race.season}/{race.round}/pitstops/", self._ttl(race.season)):
             for entry in mr["RaceTable"]["Races"]:
@@ -157,19 +183,6 @@ class Sources:
         done = [s for s in rows if not s.get("is_cancelled")
                 and parse_time(s["date_end"]) + 3600 < now]
         return sorted(done, key=lambda s: s["date_start"], reverse=True)
-
-
-def parse_duration(text: str | None) -> float | None:
-    """'1:39.264', '25.123' or '1:02:03.5' -> seconds; None if absent or malformed."""
-    if not text:
-        return None
-    try:
-        total = 0.0
-        for part in text.strip().split(":"):
-            total = total * 60 + float(part)
-        return total
-    except ValueError:
-        return None
 
 
 def match_session(race_date: str, sessions: list[dict]) -> dict | None:

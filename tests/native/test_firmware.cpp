@@ -186,6 +186,27 @@ static void testManifest(const std::string& path) {
   }
   printf("Manifest: %d seasons, %d ready races\n", seasonCount, ready);
 
+  // Auto-play order: the next ready race, wrapping round to the oldest.
+  static ManifestRow next;
+  if (ready > 1) {
+    uint16_t lastSeason = 0;
+    uint8_t lastRound = 0;
+    manifest.rewind();
+    while (manifest.nextRow(&next)) {
+      if (next.status == 'R') {
+        lastSeason = next.season;
+        lastRound = next.round;
+      }
+    }
+    CHECK(manifest.findNextReady(lastSeason, lastRound, &next));
+    CHECK(next.status == 'R' && next.season <= lastSeason);
+    const uint16_t firstSeason = next.season;
+    const uint8_t firstRound = next.round;
+    CHECK(manifest.findNextReady(firstSeason, firstRound, &next));
+    CHECK(next.status == 'R' && (next.season > firstSeason ||
+                                 (next.season == firstSeason && next.round > firstRound)));
+  }
+
   static const char bad[] = "not a manifest\n";
   MemorySource badSource(std::vector<uint8_t>(bad, bad + sizeof(bad) - 1));
   CHECK(manifest.open(&badSource) == ManifestError::NotAManifest);

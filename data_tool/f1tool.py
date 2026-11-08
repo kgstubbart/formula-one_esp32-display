@@ -75,17 +75,27 @@ def _build(src: Sources, season: int, rounds: list[int]) -> int:
     return 1 if failures else 0
 
 
+def built(season: int, round_number: int) -> bool:
+    return (builder.root_dir(OUT_DIR) / "races" / f"{season}_{round_number:02d}.f1r").exists()
+
+
 def cmd_build(args) -> int:
     src = sources()
-    if args.all:
-        rounds = [r.round for r in src.races(args.season)
-                  if r.availability in (AVAIL_TELEMETRY, AVAIL_ESTIMATED)]
-    elif args.round:
-        rounds = [args.round]
-    else:
-        print("Give --round N or --all.")
+    seasons = parse_seasons(args.season)
+    if not args.all and (not args.round or len(seasons) != 1):
+        print("Give one season with --round N, or use --all (seasons can be a range: 2002-2022).")
         return 2
-    return _build(src, args.season, rounds)
+    result = 0
+    for season in seasons:
+        if args.all:
+            rounds = [r.round for r in src.races(season)
+                      if r.availability in (AVAIL_TELEMETRY, AVAIL_ESTIMATED)]
+        else:
+            rounds = [args.round]
+        if args.missing_only:
+            rounds = [r for r in rounds if not built(season, r)]
+        result |= _build(src, season, rounds)
+    return result
 
 
 def cmd_catalog(args) -> int:
@@ -219,9 +229,11 @@ def parser() -> argparse.ArgumentParser:
     item.set_defaults(run=cmd_list)
 
     item = commands.add_parser("build", help="download and convert races")
-    item.add_argument("--season", type=int, required=True)
+    item.add_argument("--season", required=True, help="e.g. 2024, or with --all 2002-2022")
     item.add_argument("--round", type=int)
     item.add_argument("--all", action="store_true", help="every available race in the season")
+    item.add_argument("--missing-only", action="store_true",
+                      help="skip races already built (to resume an interrupted run)")
     item.set_defaults(run=cmd_build)
 
     item = commands.add_parser("catalog", help="list whole seasons on the device")

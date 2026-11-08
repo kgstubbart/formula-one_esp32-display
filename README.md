@@ -88,11 +88,17 @@ A telemetry race takes about a minute, because the tool stays under OpenF1's fre
 limit of 30 requests per minute. Everything is cached in `data_tool\cache`, so a rebuild
 needs no downloads.
 
+Races from 1996 to 2022 come from Jolpica's database download: one 15 MB file, refreshed
+monthly, instead of about 15 requests per race. That takes a whole run of 2002 to 2022
+from about 10 hours to a few minutes. Races from 2023 on still take about a minute each.
+Every race from 2002 to now is roughly 1.2 GB.
+
 Other useful commands:
 
 ```powershell
-# Build a whole season. Older seasons can take an hour because of Jolpica's limits.
-.venv\Scripts\python data_tool\f1tool.py build --season 2012 --all
+# Build whole seasons. --missing-only skips races already built, so an interrupted
+# run can be started again and carries on.
+.venv\Scripts\python data_tool\f1tool.py build --season 2002-2022 --all --missing-only
 
 # List whole seasons on the device, including races you have not built.
 .venv\Scripts\python data_tool\f1tool.py catalog --seasons 2021-2024
@@ -159,6 +165,14 @@ These settings are saved. You can change them later under **Setup** on the seaso
 
 ## Using the replay
 
+The controls along the bottom hide after 4 seconds of playback, so the map and the running
+order fill the screen. **Tap the map, or the top bar, to bring them back.** They stay up
+while paused.
+
+When a race ends, a 10-second countdown names the next race on the card, then plays it at
+the same speed. Tap during the countdown to stay on the finished race. After the newest
+race it continues from the oldest. Turn this off with **Setup > Auto-next**.
+
 | Control | What it does |
 |---|---|
 | Menu (three lines) | Leave the replay |
@@ -167,8 +181,9 @@ These settings are saved. You can change them later under **Setup** on the seaso
 | `2x` | Cycle the speed: 1x, 2x, 5x, 10x, 30x, 60x |
 | Slider | Tap or drag to move through the race |
 | Running order | Tap a driver to follow them and see their last lap time. Tap again to clear. |
-| `more v` | Shows the rest of the order when more than 19 cars are listed |
-| Track map | Cycle the name labels: top 5, all, none |
+| `more v` | Shows the rest of the order when more than 24 cars are listed |
+| Track map | Show the controls. While they are showing, cycle the name labels: top 5, all, none |
+| Top bar | Show or hide the controls |
 | APPROX / ESTIMATED label | Open the notes for this race |
 
 Reading the screen:
@@ -220,9 +235,10 @@ are chosen on the device.
 - **Red and blue are swapped:** tap **Swap red/blue**.
 - **The image is upside down or mirrored:** tap **Rotate** or **Mirror**, then calibrate
   touch again.
-- **The screen is white or garbled, so you cannot tap anything:** hold **BOOT**, press and
-  release **RESET** (it may be labeled EN), then release BOOT. Each time, this moves to the
-  next panel setting: ILI9341 normal, ILI9341 inverted, ST7789 normal, ST7789 inverted.
+- **The screen stays dark right after an upload:** press **RESET** (it may be labeled EN) once.
+- **The screen is unreadable, so you cannot tap anything:** in Arduino IDE, set **Tools >
+  Erase All Flash Before Sketch Upload** to *Enabled* and upload again. This clears the saved
+  display and touch settings, so setup starts over. Set it back to *Disabled* afterward.
 - **The screen is black:** check the USB cable and power source. Do not connect anything
   to pin 21 on the P3 connector, because it drives the backlight.
 - **Flicker:** try another USB cable or power supply.

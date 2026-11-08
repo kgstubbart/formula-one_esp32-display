@@ -48,6 +48,10 @@ class Manifest {
   int collectRaces(uint16_t season, RaceListItem* out, int maxRaces);
   bool findRace(uint16_t season, uint8_t round, ManifestRow* row);
 
+  // The first ready race after this one, wrapping round to the oldest. False if this is
+  // the only ready race.
+  bool findNextReady(uint16_t season, uint8_t round, ManifestRow* row);
+
  private:
   bool readLine(char* dst, int dstSize);
   int nextByte();

@@ -4,6 +4,7 @@
 
 DisplaySettings gDisplaySettings;
 TouchCalibration gTouchCalibration;
+bool gAutoNext = true;
 
 namespace {
 constexpr const char* NAMESPACE = "f1replay";
@@ -18,6 +19,7 @@ void settingsLoad() {
   gDisplaySettings.rotation = prefs.getUChar("rotation", 1);
   gDisplaySettings.brightness = prefs.getUChar("bright", 200);
   gDisplaySettings.confirmed = prefs.getBool("confirmed", false);
+  gAutoNext = prefs.getBool("autonext", true);
   gTouchCalibration.valid = prefs.getBytes("touchcal", gTouchCalibration.m,
                                            sizeof(gTouchCalibration.m)) ==
                             sizeof(gTouchCalibration.m);
@@ -42,6 +44,12 @@ void settingsSaveTouch() {
   } else {
     prefs.remove("touchcal");
   }
+  prefs.end();
+}
+
+void settingsSaveAutoNext() {
+  prefs.begin(NAMESPACE, false);
+  prefs.putBool("autonext", gAutoNext);
   prefs.end();
 }
 

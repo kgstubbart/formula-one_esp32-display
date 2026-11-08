@@ -53,5 +53,7 @@ void uiRaceUnavailable(const ManifestRow& row);
 bool uiRaceInfo(RaceFile& race);
 
 // Replay (ui_playback.cpp). Returns when the user leaves.
-enum class PlaybackResult { Back, OutOfMemory, ReadError };
-PlaybackResult uiPlayback(RaceFile& race);
+// `nextRace` names the race to count down to at the end, or is nullptr for none.
+// `speedIndex` carries the chosen speed from one race to the next.
+enum class PlaybackResult { Back, Next, OutOfMemory, ReadError };
+PlaybackResult uiPlayback(RaceFile& race, const char* nextRace, uint8_t* speedIndex);

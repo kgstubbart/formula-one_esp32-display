@@ -122,6 +122,22 @@ int Manifest::collectRaces(uint16_t season, RaceListItem* out, int maxRaces) {
   return count;
 }
 
+bool Manifest::findNextReady(uint16_t season, uint8_t round, ManifestRow* row) {
+  const uint32_t current = uint32_t(season) * 256 + round;
+  uint32_t first = UINT32_MAX;
+  uint32_t next = UINT32_MAX;
+  rewind();
+  while (nextRow(row)) {
+    if (row->status != 'R') continue;
+    const uint32_t key = uint32_t(row->season) * 256 + row->round;
+    if (key < first) first = key;
+    if (key > current && key < next) next = key;
+  }
+  const uint32_t target = next != UINT32_MAX ? next : first;
+  if (target == UINT32_MAX || target == current) return false;
+  return findRace(uint16_t(target / 256), uint8_t(target % 256), row);
+}
+
 bool Manifest::findRace(uint16_t season, uint8_t round, ManifestRow* row) {
   rewind();
   while (nextRow(row)) {
